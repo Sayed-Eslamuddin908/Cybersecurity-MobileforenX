@@ -450,6 +450,39 @@ Please do not contribute private evidence, credentials, API keys, private keys, 
 
 ---
 
+## 🔐 Source Code Protection
+
+MobileForenX uses protected/encrypted Python components as part of its distribution model.
+
+The protected components are intended to:
+
+- 🔒 Prevent direct reading of the original Python source
+- 🛡️ Protect proprietary implementation details
+- 📦 Allow the application to execute its required components
+- 🚫 Discourage unauthorized modification or redistribution of protected source code
+
+### Protected Components
+
+Core MobileForenX Python modules may be distributed in protected/encrypted form rather than as readable source files.
+
+```text
+MobileForenX
+│
+├── Launcher
+│    └── mft
+│
+├── Protected Python Components
+│    ├── content_extract
+│    ├── evidence_indexer
+│    ├── evidence_browser
+│    ├── forensic_report
+│    ├── root_artifact_extractor
+│    ├── sqlite_carve
+│    ├── wireless_adb
+│    └── security_manager
+│
+└── Configuration / Resources
+
 ## ⚖️ Authorized Use
 
 MobileForenX is intended for:
