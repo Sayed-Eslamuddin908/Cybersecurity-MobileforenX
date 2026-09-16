@@ -1,0 +1,23 @@
+{
+  "version": "1.0",
+  "release_date": "2026-09-16",
+  "author": "Sayed Eslamuddin",
+  "github_repo": "yourusername/mobileforenx",
+  "update_manifest_url": "https://raw.githubusercontent.com/yourusername/mobileforenx/main/version.json",
+  "files_to_update": [
+    "Mobileforenx.py",
+    "web_interface.py",
+    "content_extract.py",
+    "forensic_report.py",
+    "security_manager.py",
+    "wireless_adb.py",
+    "evidence_indexer.py",
+    "evidence_browser.py",
+    "root_artifact_extractor.py",
+    "sqlite_carve.py",
+    "templates/login.html",
+    "templates/index.html",
+    "static/app.css",
+    "static/app.js"
+  ]
+}

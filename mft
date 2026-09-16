@@ -1,0 +1,1055 @@
+#!/usr/bin/env bash
+# ============================================================
+# MobileForenX — One-Command Launcher (Final, with Encryption Support)
+# Engineered & Designed by Sayed Eslamuddin
+# ============================================================
+set -euo pipefail
+
+# ─── Author ─────────────────────────────────────────────────
+readonly AUTHOR_NAME="Sayed Eslamuddin"
+readonly LOCAL_VERSION_FILE="version.json"
+readonly DEFENCY_FILE="defency"
+readonly ENV_FILE=".env"
+readonly UPDATE_CHECK_INTERVAL=3600
+readonly STAMP_FILE=".last_update_check"
+
+# ─── Colours ─────────────────────────────────────────────────
+BOLD='\033[1m'; DIM='\033[2m'
+GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'
+BLUE='\033[0;34m'; CYAN='\033[0;36m'; NC='\033[0m'
+
+# ─── Config ──────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IMAGE_NAME="mft"
+CONTAINER_NAME="mft"
+HOST_PORT="${MFX_PORT:-5000}"
+APP_URL="http://localhost:${HOST_PORT}"
+
+# ═══════════════════════════════════════════════════════════════
+#  LOAD .env FILE
+# ═══════════════════════════════════════════════════════════════
+if [[ -f "${SCRIPT_DIR}/${ENV_FILE}" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${SCRIPT_DIR}/${ENV_FILE}"
+    set +a
+fi
+
+# ─── Export env vars ─────────────────────────────────────────
+export MFX_USER="${MFX_USER:-mobfx}"
+export MFX_PASS="${MFX_PASS:-mobfx}"
+export MFX_SECRET="${MFX_SECRET:-$(openssl rand -hex 32 2>/dev/null || echo 'mfx-fallback-secret')}"
+export MFX_HOST="0.0.0.0"
+export MFX_PORT="${HOST_PORT}"
+export PEGASUS_PASSWORD="${PEGASUS_PASSWORD:-}"
+
+# ═══════════════════════════════════════════════════════════════
+#  AUTO-FIX requirements.txt (ensure cryptography is there)
+# ═══════════════════════════════════════════════════════════════
+ensure_requirements() {
+    local req_file="${SCRIPT_DIR}/requirements.txt"
+
+    [[ ! -f "${req_file}" ]] && {
+        warn "requirements.txt not found — creating"
+        cat > "${req_file}" << 'REQEOF'
+Flask>=3.0.0
+Werkzeug>=3.0.0
+Jinja2>=3.1.0
+reportlab>=4.0.0
+Pillow>=10.0.0
+qrcode>=7.4.0
+python-magic>=0.4.27
+cryptography>=42.0.0
+REQEOF
+        ok "requirements.txt created"
+        return 0
+    }
+
+    # Required packages that must be present
+    local required_pkgs=(
+        "Flask>=3.0.0"
+        "Werkzeug>=3.0.0"
+        "Jinja2>=3.1.0"
+        "reportlab>=4.0.0"
+        "Pillow>=10.0.0"
+        "qrcode>=7.4.0"
+        "python-magic>=0.4.27"
+        "cryptography>=42.0.0"
+    )
+
+    local added=0
+
+    for pkg in "${required_pkgs[@]}"; do
+        local name="${pkg%%>=*}"
+        # Case-insensitive check
+        if ! grep -qi "^${name}" "${req_file}" 2>/dev/null; then
+            echo "${pkg}" >> "${req_file}"
+            ok "Added ${pkg} to requirements.txt"
+            added=$((added + 1))
+        fi
+    done
+
+    if [[ ${added} -eq 0 ]]; then
+        info "requirements.txt already complete"
+    else
+        ok "requirements.txt updated (${added} packages added)"
+    fi
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  AUTO-FIX Dockerfile (ensure it installs requirements)
+# ═══════════════════════════════════════════════════════════════
+ensure_dockerfile() {
+    local df="${SCRIPT_DIR}/Dockerfile"
+
+    [[ ! -f "${df}" ]] && {
+        fail "Dockerfile not found"
+        return 1
+    }
+
+    # Check it installs requirements.txt
+    if ! grep -q "pip3 install.*requirements.txt" "${df}" 2>/dev/null; then
+        warn "Dockerfile does not install requirements.txt"
+        info "You may need to add: RUN pip3 install -r /app/requirements.txt"
+        return 1
+    fi
+
+    ok "Dockerfile installs requirements.txt"
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  ENSURE HOST HAS cryptography (for local tests)
+# ═══════════════════════════════════════════════════════════════
+ensure_host_cryptography() {
+    if python3 -c "import cryptography" 2>/dev/null; then
+        local ver
+        ver=$(python3 -c "import cryptography; print(cryptography.__version__)" 2>/dev/null || echo "?")
+        ok "cryptography on host: ${ver}"
+        return 0
+    fi
+
+    warn "cryptography NOT installed on host"
+    info "Installing via pip3..."
+    pip3 install --user -q cryptography 2>/dev/null && \
+        ok "cryptography installed on host" || \
+        warn "Could not install cryptography on host (continue anyway)"
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  ENSURE CONTAINER IMAGE HAS cryptography (rebuild if missing)
+# ═══════════════════════════════════════════════════════════════
+ensure_image_cryptography() {
+    # Skip if image doesn't exist yet
+    if ! image_exists; then
+        return 0  # will be built fresh
+    fi
+
+    # Test if cryptography is in the image
+    if sudo ${CONTAINER_ENGINE} run --rm "${IMAGE_NAME}:latest" \
+        python3 -c "import cryptography" >/dev/null 2>&1; then
+        local ver
+        ver=$(sudo ${CONTAINER_ENGINE} run --rm "${IMAGE_NAME}:latest" \
+            python3 -c "import cryptography; print(cryptography.__version__)" 2>/dev/null || echo "?")
+        ok "cryptography in image: ${ver}"
+        return 0
+    fi
+
+    warn "cryptography NOT in image — rebuilding required"
+    info "This is why encrypted files fail to load"
+    return 1
+}
+
+# ─── Helpers ─────────────────────────────────────────────────
+banner() {
+    echo ""
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}${BOLD}  🛡️  MobileForenX — Forensic Investigation Suite${NC}"
+    echo -e "${CYAN}${BOLD}  Engineered & Designed by ${AUTHOR_NAME}${NC}"
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+}
+step()  { echo -e "${BLUE}==>${NC} ${BOLD}$*${NC}"; }
+ok()    { echo -e "${GREEN} ✓${NC} $*"; }
+warn()  { echo -e "${YELLOW} ⚠${NC} $*"; }
+fail()  { echo -e "${RED} ✗${NC} $*"; }
+info()  { echo -e "${CYAN} ℹ${NC} $*"; }
+die()   { fail "$*"; exit 1; }
+
+# ═══════════════════════════════════════════════════════════════
+#  ENSURE ENCRYPTION PASSWORD
+# ═══════════════════════════════════════════════════════════════
+ensure_password() {
+    local has_encrypted=0
+    for f in "${SCRIPT_DIR}"/*.py; do
+        [[ ! -f "$f" ]] && continue
+        if grep -q "PEGASUS_PASSWORD\|_BLOB" "$f" 2>/dev/null; then
+            has_encrypted=1
+            break
+        fi
+    done
+
+    if [[ ${has_encrypted} -eq 0 ]]; then
+        return 0
+    fi
+
+    if [[ -n "${PEGASUS_PASSWORD:-}" ]]; then
+        ok "Encryption password loaded"
+        return 0
+    fi
+
+    warn "Encryption password NOT set"
+    echo ""
+    echo -e "  ${DIM}Your .py files are encrypted. Need PEGASUS_PASSWORD.${NC}"
+    echo -e "  ${DIM}Create .env once:${NC}"
+    echo ""
+    echo -e "    ${CYAN}echo 'PEGASUS_PASSWORD=YourPassword' > ${ENV_FILE}${NC}"
+    echo -e "    ${CYAN}chmod 600 ${ENV_FILE}${NC}"
+    echo ""
+
+    if [[ -t 0 ]]; then
+        read -s -p "$(echo -e ${YELLOW})  Enter encryption password (Enter to skip): $(echo -e ${NC})" PASSWORD_INPUT
+        echo ""
+        if [[ -n "${PASSWORD_INPUT}" ]]; then
+            export PEGASUS_PASSWORD="${PASSWORD_INPUT}"
+            if [[ -t 0 ]]; then
+                read -p "$(echo -e ${YELLOW})  Save to .env? [Y/n]: $(echo -e ${NC})" -r save_reply
+                save_reply="${save_reply:-Y}"
+                if [[ "${save_reply}" =~ ^[Yy]$ ]]; then
+                    echo "PEGASUS_PASSWORD=${PASSWORD_INPUT}" > "${SCRIPT_DIR}/${ENV_FILE}"
+                    chmod 600 "${SCRIPT_DIR}/${ENV_FILE}"
+                    ok "Password saved to ${ENV_FILE}"
+                    if ! grep -q "^${ENV_FILE}$" "${SCRIPT_DIR}/.gitignore" 2>/dev/null; then
+                        echo "${ENV_FILE}" >> "${SCRIPT_DIR}/.gitignore"
+                        ok "Added ${ENV_FILE} to .gitignore"
+                    fi
+                fi
+            fi
+            return 0
+        fi
+    fi
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  1. AUTHOR VERIFICATION
+# ═══════════════════════════════════════════════════════════════
+verify_author() {
+    step "Verifying author integrity"
+    echo ""
+
+    local errors=0
+    local required_files=(
+        "Mobileforenx.py" "web_interface.py" "content_extract.py"
+        "forensic_report.py" "security_manager.py" "wireless_adb.py"
+        "evidence_indexer.py" "evidence_browser.py"
+        "root_artifact_extractor.py" "sqlite_carve.py"
+        "Dockerfile" "requirements.txt" "entrypoint.sh"
+    )
+
+    if grep -q "${AUTHOR_NAME}" "${BASH_SOURCE[0]}" 2>/dev/null; then
+        ok "Launcher: author present"
+    else
+        fail "Launcher: author MISSING"; errors=$((errors + 1))
+    fi
+
+    local missing=()
+    for f in "${required_files[@]}"; do
+        [[ ! -f "${SCRIPT_DIR}/${f}" ]] && missing+=("$f")
+    done
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        ok "All ${#required_files[@]} core files present"
+    else
+        fail "Missing files: ${missing[*]}"; errors=$((errors + 1))
+    fi
+
+    for f in "Mobileforenx.py" "web_interface.py" "Dockerfile"; do
+        if [[ -f "${SCRIPT_DIR}/${f}" ]] && grep -qi "${AUTHOR_NAME}" "${SCRIPT_DIR}/${f}" 2>/dev/null; then
+            ok "Author in ${f}"
+        fi
+    done
+
+    echo ""
+    if [[ ${errors} -gt 0 ]]; then
+        fail "═══════════════════════════════════════════════════════════"
+        fail "  AUTHOR VERIFICATION FAILED — ${errors} error(s)"
+        fail "═══════════════════════════════════════════════════════════"
+        exit 1
+    fi
+    ok "Author verification passed — ${AUTHOR_NAME}"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  2. AUTO-UPDATE
+# ═══════════════════════════════════════════════════════════════
+check_for_updates() {
+    step "Checking for updates"
+
+    [[ "${MFX_NO_UPDATE:-0}" == "1" ]] && { info "Update check skipped"; return 0; }
+    [[ ! -f "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" ]] && { warn "version.json not found"; return 0; }
+    ! command -v curl >/dev/null 2>&1 && { warn "curl missing"; return 0; }
+
+    local stamp="${SCRIPT_DIR}/${STAMP_FILE}"
+    if [[ "${FORCE_UPDATE:-0}" != "1" ]] && [[ -f "${stamp}" ]]; then
+        local last now elapsed
+        last=$(cat "${stamp}" 2>/dev/null || echo 0)
+        now=$(date +%s)
+        elapsed=$((now - last))
+        if (( elapsed < UPDATE_CHECK_INTERVAL )); then
+            info "Update throttled (${elapsed}s ago)"
+            return 0
+        fi
+    fi
+
+    local local_version remote_url repo
+    local_version=$(grep -oP '"version"\s*:\s*"\K[^"]+' "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" | head -1 || true)
+    remote_url=$(grep -oP '"update_manifest_url"\s*:\s*"\K[^"]+' "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" | head -1 || true)
+    repo=$(grep -oP '"github_repo"\s*:\s*"\K[^"]+' "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" | head -1 || true)
+
+    [[ -z "${local_version}" || -z "${remote_url}" ]] && { warn "Cannot parse version.json"; return 0; }
+
+    echo ""
+    info "Local version:  ${local_version}"
+    info "Checking:       ${remote_url}"
+    echo ""
+
+    local tmp_manifest
+    tmp_manifest=$(mktemp)
+
+    if ! curl -fsSL --max-time 10 -o "${tmp_manifest}" "${remote_url}" 2>/dev/null; then
+        warn "Cannot reach update server"
+        date +%s > "${stamp}"
+        rm -f "${tmp_manifest}"
+        return 0
+    fi
+
+    local remote_version
+    remote_version=$(grep -oP '"version"\s*:\s*"\K[^"]+' "${tmp_manifest}" | head -1 || true)
+    [[ -z "${remote_version}" ]] && { warn "Remote manifest invalid"; date +%s > "${stamp}"; rm -f "${tmp_manifest}"; return 0; }
+
+    info "Remote version: ${remote_version}"
+    echo ""
+
+    local newest
+    newest=$(printf '%s\n%s\n' "${local_version}" "${remote_version}" | sort -V | tail -1)
+
+    if [[ "${newest}" == "${local_version}" ]]; then
+        ok "Already up to date (v${local_version})"
+        date +%s > "${stamp}"
+        rm -f "${tmp_manifest}"
+        echo ""
+        return 0
+    fi
+
+    echo -e "${YELLOW}${BOLD}  ⚡ New version: v${remote_version}${NC}"
+    echo ""
+
+    local reply="Y"
+    if [[ -t 0 ]]; then
+        read -p "$(echo -e ${YELLOW})  Update now? [Y/n]: $(echo -e ${NC})" -r reply
+        reply="${reply:-Y}"
+    fi
+
+    if [[ "${reply}" =~ ^[Yy]$ ]]; then
+        apply_update "${repo}" "${remote_version}" "${tmp_manifest}"
+    else
+        info "Update skipped"
+    fi
+
+    date +%s > "${stamp}"
+    rm -f "${tmp_manifest}"
+    echo ""
+}
+
+apply_update() {
+    local repo="$1"; local version="$2"; local manifest="$3"
+    step "Applying update to v${version}"
+
+    local backup="${SCRIPT_DIR}/.backup_pre_update"
+    rm -rf "${backup}"; mkdir -p "${backup}"
+
+    local files_raw
+    files_raw=$(grep -oP '"files_to_update"\s*:\s*\[\K[^\]]+' "${manifest}" | tr -d '"' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)
+
+    [[ -z "${files_raw}" ]] && { warn "No files in manifest"; return 1; }
+
+    local updated=0 failed=0
+    while IFS= read -r relpath; do
+        [[ -z "${relpath}" ]] && continue
+        local local_file="${SCRIPT_DIR}/${relpath}"
+        local remote_file="https://raw.githubusercontent.com/${repo}/main/${relpath}"
+
+        if [[ -f "${local_file}" ]]; then
+            mkdir -p "${backup}/$(dirname "${relpath}")"
+            cp "${local_file}" "${backup}/${relpath}" 2>/dev/null || true
+        fi
+
+        mkdir -p "$(dirname "${local_file}")"
+
+        info "Updating ${relpath}..."
+        if curl -fsSL --max-time 30 -o "${local_file}.new" "${remote_file}" 2>/dev/null; then
+            if grep -qi "${AUTHOR_NAME}" "${local_file}.new" 2>/dev/null; then
+                mv "${local_file}.new" "${local_file}"
+                ok "  ✓ ${relpath}"
+                updated=$((updated + 1))
+            else
+                warn "  ⚠ ${relpath} missing author — skipped"
+                rm -f "${local_file}.new"
+                failed=$((failed + 1))
+            fi
+        else
+            warn "  ✗ ${relpath} download failed"
+            rm -f "${local_file}.new"
+            failed=$((failed + 1))
+        fi
+    done <<< "${files_raw}"
+
+    echo ""
+    ok "Update complete — ${updated} updated, ${failed} failed"
+    info "Backup: ${backup}"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  3. DEPENDENCIES
+# ═══════════════════════════════════════════════════════════════
+check_deps() {
+    step "Checking system dependencies"
+
+    if command -v apt-get >/dev/null 2>&1; then
+        PKG_MGR="apt"; PKG_INSTALL="sudo apt-get install -y"; PKG_UPDATE="sudo apt-get update"
+    elif command -v dnf >/dev/null 2>&1; then
+        PKG_MGR="dnf"; PKG_INSTALL="sudo dnf install -y"; PKG_UPDATE=""
+    elif command -v pacman >/dev/null 2>&1; then
+        PKG_MGR="pacman"; PKG_INSTALL="sudo pacman -S --noconfirm"; PKG_UPDATE=""
+    else
+        PKG_MGR="unknown"; warn "Unknown package manager"
+    fi
+
+    NEED_INSTALL=()
+
+    if command -v podman >/dev/null 2>&1; then
+        CONTAINER_ENGINE="podman"; ok "podman $(podman --version | awk '{print $3}')"
+    elif command -v docker >/dev/null 2>&1; then
+        CONTAINER_ENGINE="docker"; ok "docker $(docker --version | awk '{print $3}' | tr -d ',')"
+    else
+        warn "podman NOT installed"; NEED_INSTALL+=("podman")
+    fi
+
+    local tools=(
+        "adb:android-tools-adb:ADB (device detection)"
+        "openssl:openssl:openssl (secret generation)"
+        "curl:curl:curl (health checks / updates)"
+        "python3:python3:python3 (tests)"
+        "pip3:python3-pip:pip3 (Python packages)"
+        "lsusb:usbutils:usbutils (USB detection)"
+    )
+
+    for entry in "${tools[@]}"; do
+        IFS=':' read -r cmd pkg desc <<< "$entry"
+        if command -v "${cmd}" >/dev/null 2>&1; then
+            ok "${cmd} available"
+        else
+            warn "${cmd} NOT installed — ${desc}"
+            if [[ ! " ${NEED_INSTALL[*]} " =~ " ${pkg} " ]]; then
+                NEED_INSTALL+=("${pkg}")
+            fi
+        fi
+    done
+
+    echo ""
+
+    if [[ ${#NEED_INSTALL[@]} -gt 0 ]]; then
+        warn "Missing packages: ${NEED_INSTALL[*]}"
+        echo ""
+        [[ "${PKG_MGR}" == "unknown" ]] && { fail "Unknown package manager"; exit 1; }
+
+        local reply="Y"
+        if [[ -t 0 ]]; then
+            read -p "$(echo -e ${YELLOW})  Install missing packages now? [Y/n]: $(echo -e ${NC})" -r reply
+            reply="${reply:-Y}"
+        fi
+
+        if [[ "${reply}" =~ ^[Yy]$ ]]; then
+            echo ""
+            step "Installing missing packages"
+            [[ -n "${PKG_UPDATE}" ]] && { info "Updating index..."; ${PKG_UPDATE} || die "Update failed"; }
+            for pkg in "${NEED_INSTALL[@]}"; do
+                info "Installing ${pkg}..."
+                ${PKG_INSTALL} "${pkg}" || warn "Failed: ${pkg}"
+            done
+            echo ""
+            ok "Installation complete"
+
+            command -v podman >/dev/null 2>&1 && CONTAINER_ENGINE="podman"
+            if [[ -z "${CONTAINER_ENGINE:-}" ]] && command -v docker >/dev/null 2>&1; then
+                CONTAINER_ENGINE="docker"
+            fi
+        else
+            fail "Cannot proceed without: ${NEED_INSTALL[*]}"
+            exit 1
+        fi
+    fi
+
+    if [[ "${CONTAINER_ENGINE}" == "podman" ]]; then
+        if ! systemctl is-active --quiet podman.socket 2>/dev/null; then
+            if systemctl list-unit-files 2>/dev/null | grep -q "podman.socket"; then
+                sudo systemctl enable --now podman.socket 2>/dev/null || true
+            fi
+        fi
+    fi
+
+    export CONTAINER_ENGINE
+    echo ""
+    ok "All dependencies satisfied"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  4. BUILD / RUN
+# ═══════════════════════════════════════════════════════════════
+build_image() {
+    step "Building container image '${IMAGE_NAME}:latest'"
+    cd "${SCRIPT_DIR}"
+
+    [[ -f Dockerfile ]]       || die "Dockerfile not found"
+    [[ -f requirements.txt ]] || die "requirements.txt not found"
+
+    echo ""
+    info "This takes 2-5 minutes on first run"
+    echo ""
+
+    sudo ${CONTAINER_ENGINE} build --no-cache -t "${IMAGE_NAME}:latest" . || die "Build failed"
+    ok "Image built successfully"
+    echo ""
+
+    step "Verifying Python packages inside image"
+    local pkgs=("flask" "werkzeug" "jinja2" "reportlab" "PIL" "qrcode" "magic" "cryptography")
+    local all_ok=true
+    for pkg in "${pkgs[@]}"; do
+        if sudo ${CONTAINER_ENGINE} run --rm "${IMAGE_NAME}:latest" \
+            python3 -c "import ${pkg}" >/dev/null 2>&1; then
+            ok "  ${pkg} ✅"
+        else
+            warn "  ${pkg} MISSING"
+            all_ok=false
+        fi
+    done
+    echo ""
+
+    if [[ "${all_ok}" == "true" ]]; then
+        ok "All Python packages verified"
+    else
+        warn "Some packages missing — check requirements.txt"
+    fi
+    echo ""
+}
+
+image_exists() {
+    sudo ${CONTAINER_ENGINE} image exists "${IMAGE_NAME}:latest" 2>/dev/null
+}
+
+stop_container() {
+    if sudo ${CONTAINER_ENGINE} ps -a --format '{{.Names}}' 2>/dev/null | grep -q "^${CONTAINER_NAME}$"; then
+        step "Stopping old container"
+        sudo ${CONTAINER_ENGINE} rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+        ok "Old container removed"
+    fi
+}
+
+open_browser() {
+    (
+        sleep 4
+        local url="${APP_URL}"
+        for cmd in xdg-open firefox-esr firefox google-chrome chromium; do
+            if command -v "${cmd}" >/dev/null 2>&1; then
+                nohup "${cmd}" "${url}" >/dev/null 2>&1 &
+                break
+            fi
+        done
+    ) &
+}
+
+wait_for_ready() {
+    step "Waiting for service"
+    local attempts=0 max=30
+    while (( attempts < max )); do
+        if curl -sf -o /dev/null "${APP_URL}/login" 2>/dev/null; then
+            echo ""
+            ok "Service UP at ${APP_URL}"
+            return 0
+        fi
+        attempts=$((attempts + 1))
+        printf "."
+        sleep 1
+    done
+    echo ""
+    warn "Service timeout"
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  DEFENCY
+# ═══════════════════════════════════════════════════════════════
+generate_defency() {
+    step "Generating 'defency' report"
+
+    local out="${SCRIPT_DIR}/${DEFENCY_FILE}"
+    local tmp
+    tmp=$(mktemp)
+
+    {
+        echo "════════════════════════════════════════════════════════════════"
+        echo "  MOBILEFORENX — DEFENCY REPORT"
+        echo "════════════════════════════════════════════════════════════════"
+        echo ""
+        echo "Author:         ${AUTHOR_NAME}"
+        echo "Generated:      $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "Hostname:       $(hostname)"
+        echo "Script dir:     ${SCRIPT_DIR}"
+        echo ""
+
+        if [[ -f "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" ]]; then
+            echo "── MOBILEFORENX VERSION ──"
+            local lv ld
+            lv=$(grep -oP '"version"\s*:\s*"\K[^"]+' "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" | head -1 || echo "unknown")
+            ld=$(grep -oP '"release_date"\s*:\s*"\K[^"]+' "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" | head -1 || echo "unknown")
+            echo "  Version:       ${lv}"
+            echo "  Release date:  ${ld}"
+            echo ""
+        fi
+
+        echo "── ENCRYPTION STATUS ──"
+        local enc_count=0 clean_count=0
+        for f in "${SCRIPT_DIR}"/*.py; do
+            [[ ! -f "$f" ]] && continue
+            if grep -q "PEGASUS_PASSWORD\|_BLOB" "$f" 2>/dev/null; then
+                enc_count=$((enc_count + 1))
+            else
+                clean_count=$((clean_count + 1))
+            fi
+        done
+        echo "  Encrypted .py files:  ${enc_count}"
+        echo "  Clean     .py files:  ${clean_count}"
+        if [[ -n "${PEGASUS_PASSWORD:-}" ]]; then
+            echo "  Password loaded:      ✅"
+        else
+            echo "  Password loaded:      ❌"
+        fi
+        echo ""
+
+        echo "── OPERATING SYSTEM ──"
+        if [[ -f /etc/os-release ]]; then
+            grep -E "^(PRETTY_NAME|VERSION)=" /etc/os-release 2>/dev/null | sed 's/^/  /' || true
+        fi
+        echo "  Kernel:        $(uname -r)"
+        echo "  Architecture:  $(uname -m)"
+        echo ""
+
+        echo "── HOST TOOLS ──"
+        local tools=("podman" "docker" "adb" "openssl" "curl" "python3" "pip3" "git")
+        for t in "${tools[@]}"; do
+            if command -v "${t}" >/dev/null 2>&1; then
+                local ver="installed"
+                case "${t}" in
+                    podman)  ver=$(podman --version 2>/dev/null | awk '{print $3}') ;;
+                    docker)  ver=$(docker --version 2>/dev/null | awk '{print $3}' | tr -d ',') ;;
+                    adb)     ver=$(adb --version 2>/dev/null | head -1 | awk '{print $5}') ;;
+                    openssl) ver=$(openssl version 2>/dev/null | awk '{print $2}') ;;
+                    curl)    ver=$(curl --version 2>/dev/null | head -1 | awk '{print $2}') ;;
+                    python3) ver=$(python3 --version 2>/dev/null | awk '{print $2}') ;;
+                    pip3)    ver=$(pip3 --version 2>/dev/null | awk '{print $2}') ;;
+                    git)     ver=$(git --version 2>/dev/null | awk '{print $3}') ;;
+                esac
+                printf "  ✓ %-12s %s\n" "${t}" "${ver}"
+            else
+                printf "  ✗ %-12s (not installed)\n" "${t}"
+            fi
+        done
+        echo ""
+
+        echo "── PYTHON PACKAGES (host) ──"
+        if python3 -c "import cryptography" 2>/dev/null; then
+            local cv
+            cv=$(python3 -c "import cryptography; print(cryptography.__version__)" 2>/dev/null || echo "?")
+            echo "  ✓ cryptography         ${cv}"
+        else
+            echo "  ✗ cryptography         (not installed)"
+        fi
+        echo ""
+
+        echo "── PYTHON PACKAGES (container) ──"
+        if image_exists; then
+            sudo ${CONTAINER_ENGINE} run --rm "${IMAGE_NAME}:latest" \
+                pip3 list --format=columns 2>/dev/null | tail -n +3 | \
+                awk '{printf "  %-30s %s\n", $1, $2}' || echo "  (could not list)"
+        else
+            echo "  (image not built yet)"
+        fi
+        echo ""
+
+        echo "── PROJECT FILES ──"
+        cd "${SCRIPT_DIR}"
+        find . -maxdepth 1 -type f \
+            \( -name "*.py" -o -name "*.html" -o -name "*.css" \
+            -o -name "*.js" -o -name "*.md" -o -name "*.txt" \
+            -o -name "*.json" -o -name "Dockerfile" \
+            -o -name "entrypoint.sh" \) -print 2>/dev/null | sort | while read -r file; do
+            local f="${file#./}"
+            local size hash
+            size=$(du -h "${file}" 2>/dev/null | cut -f1)
+            hash=$(sha256sum "${file}" 2>/dev/null | cut -c1-16)
+            printf "  %-35s %6s  sha256:%s…\n" "${f}" "${size}" "${hash}"
+        done
+        echo ""
+
+        echo "── CONTAINER INFO ──"
+        if image_exists; then
+            sudo ${CONTAINER_ENGINE} images --format '  Image:    {{.Repository}}:{{.Tag}} ({{.Size}})' 2>/dev/null | grep "${IMAGE_NAME}" || true
+        fi
+        if sudo ${CONTAINER_ENGINE} ps --format '{{.Names}}' 2>/dev/null | grep -q "${CONTAINER_NAME}"; then
+            sudo ${CONTAINER_ENGINE} ps --format '  Running:  {{.Names}} ({{.Status}})' 2>/dev/null | grep "${CONTAINER_NAME}" || true
+        else
+            echo "  Running:  (not running)"
+        fi
+        echo ""
+
+        echo "── RUNTIME ──"
+        echo "  Port:      ${HOST_PORT}"
+        echo "  URL:       ${APP_URL}"
+        echo "  User:      ${MFX_USER}"
+        echo ""
+
+        echo "── INTEGRITY ──"
+        echo "  Author:    ${AUTHOR_NAME}"
+        echo "  Report ID: $(date +%s)-$RANDOM"
+        echo ""
+
+        echo "════════════════════════════════════════════════════════════════"
+        echo "  END OF DEFENCY REPORT"
+        echo "════════════════════════════════════════════════════════════════"
+    } > "${tmp}"
+
+    local body_hash
+    body_hash=$(sha256sum "${tmp}" | awk '{print $1}')
+    {
+        cat "${tmp}"
+        echo ""
+        echo "Report SHA-256: ${body_hash}"
+    } > "${out}"
+
+    rm -f "${tmp}"
+    ok "Defency report written: ${out}"
+    echo ""
+}
+
+show_defency() {
+    if [[ ! -f "${SCRIPT_DIR}/${DEFENCY_FILE}" ]]; then
+        warn "No defency file yet — generating..."
+        generate_defency
+    fi
+    echo ""
+    cat "${SCRIPT_DIR}/${DEFENCY_FILE}"
+    echo ""
+}
+
+# ═══════════════════════════════════════════════════════════════
+#  RUN MODES
+# ═══════════════════════════════════════════════════════════════
+run_web() {
+    stop_container
+
+    echo ""
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════════${NC}"
+    echo -e "  ${BOLD}Author:${NC}      ${CYAN}${AUTHOR_NAME}${NC}"
+    echo -e "  ${BOLD}URL:${NC}         ${CYAN}${APP_URL}${NC}"
+    echo -e "  ${BOLD}Username:${NC}    ${CYAN}${MFX_USER}${NC}"
+    echo -e "  ${BOLD}Password:${NC}    ${CYAN}${MFX_PASS}${NC}"
+    echo -e "  ${BOLD}Defency:${NC}     ${CYAN}./defency${NC}"
+    echo -e "  ${BOLD}Stop:${NC}        ${YELLOW}Ctrl+C${NC}"
+    echo -e "${CYAN}${BOLD}════════════════════════════════════════════════════════════════${NC}"
+    echo ""
+
+    open_browser
+
+    trap 'echo ""; step "Shutting down..."; sudo ${CONTAINER_ENGINE} rm -f ${CONTAINER_NAME} 2>/dev/null || true; exit 0' INT TERM
+
+    local env_flags=(
+        -e "MFX_USER=${MFX_USER}"
+        -e "MFX_PASS=${MFX_PASS}"
+        -e "MFX_SECRET=${MFX_SECRET}"
+        -e "MFX_AUTHOR=${AUTHOR_NAME}"
+        -e "MFX_HOST=0.0.0.0"
+        -e "MFX_PORT=${HOST_PORT}"
+        -e "PYTHONUNBUFFERED=1"
+    )
+
+    if [[ -n "${PEGASUS_PASSWORD:-}" ]]; then
+        env_flags+=(-e "PEGASUS_PASSWORD=${PEGASUS_PASSWORD}")
+        ok "Encryption password passed to container"
+    else
+        warn "No encryption password"
+    fi
+
+    # IMPORTANT: use -i but NOT -t so isatty() returns false inside container
+    sudo ${CONTAINER_ENGINE} run --rm -i \
+        --privileged \
+        --name "${CONTAINER_NAME}" \
+        --network=host \
+        "${env_flags[@]}" \
+        -v /dev/bus/usb:/dev/bus/usb \
+        -v /run/udev:/run/udev:ro \
+        -v "${SCRIPT_DIR}/forensic_cases:/app/forensic_cases" \
+        -v "${SCRIPT_DIR}/wordlists:/app/wordlists" \
+        "${IMAGE_NAME}:latest" || true
+}
+
+run_cli() {
+    stop_container
+    step "Starting CLI mode"
+    echo ""
+
+    local env_flags=()
+    if [[ -n "${PEGASUS_PASSWORD:-}" ]]; then
+        env_flags+=(-e "PEGASUS_PASSWORD=${PEGASUS_PASSWORD}")
+    fi
+
+    sudo ${CONTAINER_ENGINE} run --rm -i \
+        --privileged \
+        --name "${CONTAINER_NAME}-cli" \
+        --network=host \
+        "${env_flags[@]}" \
+        -v /dev/bus/usb:/dev/bus/usb \
+        -v "${SCRIPT_DIR}/forensic_cases:/app/forensic_cases" \
+        -v "${SCRIPT_DIR}/wordlists:/app/wordlists" \
+        "${IMAGE_NAME}:latest" \
+        python3 /app/Mobileforenx.py || true
+}
+
+run_shell() {
+    step "Opening shell"
+
+    local env_flags=()
+    if [[ -n "${PEGASUS_PASSWORD:-}" ]]; then
+        env_flags+=(-e "PEGASUS_PASSWORD=${PEGASUS_PASSWORD}")
+    fi
+
+    sudo ${CONTAINER_ENGINE} run --rm -it \
+        --privileged \
+        --name "${CONTAINER_NAME}-shell" \
+        --network=host \
+        "${env_flags[@]}" \
+        -v /dev/bus/usb:/dev/bus/usb \
+        -v "${SCRIPT_DIR}/forensic_cases:/app/forensic_cases" \
+        -v "${SCRIPT_DIR}/wordlists:/app/wordlists" \
+        "${IMAGE_NAME}:latest" \
+        /bin/bash
+}
+
+do_stop() {
+    step "Stopping containers"
+    sudo ${CONTAINER_ENGINE} rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+    sudo ${CONTAINER_ENGINE} rm -f "${CONTAINER_NAME}-cli" 2>/dev/null || true
+    sudo ${CONTAINER_ENGINE} rm -f "${CONTAINER_NAME}-shell" 2>/dev/null || true
+    ok "Stopped"
+}
+
+do_logs() {
+    step "Logs (Ctrl+C to exit)"
+    sudo ${CONTAINER_ENGINE} logs -f "${CONTAINER_NAME}"
+}
+
+do_status() {
+    step "Status"
+    echo ""
+    echo -e "  ${BOLD}Author:${NC}    ${AUTHOR_NAME}"
+
+    local lv="unknown"
+    [[ -f "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" ]] && \
+        lv=$(grep -oP '"version"\s*:\s*"\K[^"]+' "${SCRIPT_DIR}/${LOCAL_VERSION_FILE}" | head -1 || echo "unknown")
+    echo -e "  ${BOLD}Version:${NC}   ${lv}"
+
+    local enc_count=0
+    for f in "${SCRIPT_DIR}"/*.py; do
+        [[ ! -f "$f" ]] && continue
+        grep -q "PEGASUS_PASSWORD\|_BLOB" "$f" 2>/dev/null && enc_count=$((enc_count + 1))
+    done
+    echo -e "  ${BOLD}Encrypted:${NC} ${enc_count} .py files"
+
+    if [[ -n "${PEGASUS_PASSWORD:-}" ]]; then
+        echo -e "  ${BOLD}Password:${NC}  ✅ set"
+    else
+        echo -e "  ${BOLD}Password:${NC}  ❌ not set"
+    fi
+
+    echo -e "  ${BOLD}Crypto:${NC}    "
+    if python3 -c "import cryptography" 2>/dev/null; then
+        echo "    ✅ host has cryptography"
+    else
+        echo "    ❌ host missing cryptography"
+    fi
+
+    if image_exists; then
+        if sudo ${CONTAINER_ENGINE} run --rm "${IMAGE_NAME}:latest" python3 -c "import cryptography" 2>/dev/null; then
+            echo "    ✅ image has cryptography"
+        else
+            echo "    ❌ image missing cryptography"
+        fi
+    fi
+    echo ""
+
+    echo -e "  ${BOLD}Container:${NC}"
+    if sudo ${CONTAINER_ENGINE} ps --format '{{.Names}}' 2>/dev/null | grep -q "${CONTAINER_NAME}"; then
+        sudo ${CONTAINER_ENGINE} ps --format '    {{.Names}}\t{{.Status}}' | grep "${CONTAINER_NAME}"
+    else
+        echo "    not running"
+    fi
+    echo ""
+
+    echo -e "  ${BOLD}Port ${HOST_PORT}:${NC}"
+    curl -sf -o /dev/null "${APP_URL}/login" 2>/dev/null && echo "    ✅ responding" || echo "    ❌ not responding"
+    echo ""
+}
+
+do_backup() {
+    step "Backing up"
+    local backup_dir="${SCRIPT_DIR}/backups"
+    mkdir -p "${backup_dir}"
+    local file="${backup_dir}/mobileforenx_backup_$(date +%Y%m%d_%H%M%S).tar.gz"
+    tar -czf "${file}" -C "${SCRIPT_DIR}" forensic_cases wordlists 2>/dev/null || true
+    [[ -f "${file}" ]] && ok "Backup: ${file}" || fail "Backup failed"
+}
+
+run_tests() {
+    step "Running tests"
+    cd "${SCRIPT_DIR}"
+    [[ ! -d tests ]] && { warn "No tests/ folder"; return 0; }
+    command -v python3 >/dev/null 2>&1 || die "python3 not found"
+    python3 -c "import pytest" 2>/dev/null || pip3 install --user -q pytest pytest-cov pytest-flask 2>/dev/null || true
+    python3 -m pytest tests/ -v || die "Tests failed"
+    ok "All tests passed"
+}
+
+do_clean() {
+    step "Cleaning up"
+    sudo ${CONTAINER_ENGINE} rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+    sudo ${CONTAINER_ENGINE} rmi -f "${IMAGE_NAME}:latest" 2>/dev/null || true
+    cd "${SCRIPT_DIR}"
+    rm -rf __pycache__ .pytest_cache htmlcov .coverage .backup_pre_update
+    find . -name "*.pyc" -delete 2>/dev/null || true
+    rm -f mft.log *.log "${STAMP_FILE}" "${DEFENCY_FILE}" 2>/dev/null || true
+    ok "Cleaned container + image + caches + defency"
+    warn "Case files preserved in ./forensic_cases/"
+}
+
+show_help() {
+    banner
+    echo -e "  ${BOLD}USAGE${NC}"
+    echo -e "    ${CYAN}./mft${NC}              Verify + update + install + build + run"
+    echo -e "    ${CYAN}./mft build${NC}        Build the container image only"
+    echo -e "    ${CYAN}./mft cli${NC}          Run interactive CLI"
+    echo -e "    ${CYAN}./mft shell${NC}        Open a shell inside the container"
+    echo -e "    ${CYAN}./mft stop${NC}         Stop running containers"
+    echo -e "    ${CYAN}./mft logs${NC}         Tail container logs"
+    echo -e "    ${CYAN}./mft status${NC}       Show status"
+    echo -e "    ${CYAN}./mft verify${NC}       Verify author integrity only"
+    echo -e "    ${CYAN}./mft update${NC}       Force check for updates"
+    echo -e "    ${CYAN}./mft defense${NC}      Regenerate defency report"
+    echo -e "    ${CYAN}./mft show${NC}         Display defency report"
+    echo -e "    ${CYAN}./mft test${NC}         Run tests"
+    echo -e "    ${CYAN}./mft backup${NC}       Backup case data"
+    echo -e "    ${CYAN}./mft clean${NC}        Remove container + image + caches"
+    echo -e "    ${CYAN}./mft help${NC}         Show this help"
+    echo ""
+    echo -e "  ${BOLD}ENVIRONMENT${NC}"
+    echo -e "    MFX_USER          (default: mobfx)"
+    echo -e "    MFX_PASS          (default: mobfx)"
+    echo -e "    MFX_SECRET        (random)"
+    echo -e "    MFX_PORT          (default: 5000)"
+    echo -e "    MFX_NO_UPDATE=1   (skip update check)"
+    echo -e "    PEGASUS_PASSWORD  (for encrypted files, from .env)"
+    echo ""
+    echo -e "  ${BOLD}ENCRYPTION${NC}"
+    echo -e "    Set via .env file:"
+    echo -e "      ${CYAN}echo 'PEGASUS_PASSWORD=YourPassword' > .env${NC}"
+    echo -e "      ${CYAN}chmod 600 .env${NC}"
+    echo ""
+    echo -e "  ${BOLD}AUTHOR${NC}    ${CYAN}${AUTHOR_NAME}${NC}"
+    echo ""
+}
+
+# ─── Main ────────────────────────────────────────────────────
+main() {
+    local cmd="${1:-run}"
+
+    case "${cmd}" in
+        run|"")
+            banner
+            ensure_requirements       # ← AUTO-FIX: adds cryptography
+            verify_author
+            ensure_password
+            ensure_host_cryptography  # ← NEW: install on host
+            check_for_updates
+            check_deps
+            mkdir -p "${SCRIPT_DIR}/forensic_cases" "${SCRIPT_DIR}/wordlists"
+
+            # Check if image exists & has cryptography
+            if ! image_exists; then
+                build_image
+            else
+                if ! ensure_image_cryptography; then
+                    warn "Rebuilding image to install cryptography..."
+                    build_image
+                fi
+            fi
+
+            generate_defency
+            run_web
+            ;;
+        build)
+            banner
+            ensure_requirements
+            verify_author
+            ensure_password
+            ensure_host_cryptography
+            check_deps
+            build_image
+            generate_defency
+            ;;
+        cli)
+            banner
+            ensure_requirements
+            verify_author
+            ensure_password
+            ensure_host_cryptography
+            check_deps
+            image_exists || build_image
+            generate_defency
+            run_cli
+            ;;
+        shell)
+            verify_author
+            ensure_password
+            check_deps
+            image_exists || build_image
+            run_shell
+            ;;
+        verify)   banner; verify_author ;;
+        update)   banner; FORCE_UPDATE=1 check_for_updates ;;
+        defense)  banner; check_deps; generate_defency ;;
+        show)     show_defency ;;
+        stop)     check_deps; do_stop ;;
+        logs)     check_deps; do_logs ;;
+        status)   check_deps; do_status ;;
+        backup)   do_backup ;;
+        test)     run_tests ;;
+        clean)    verify_author; check_deps; do_clean ;;
+        help|--help|-h) show_help ;;
+        *)
+            fail "Unknown command: ${cmd}"
+            show_help
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
