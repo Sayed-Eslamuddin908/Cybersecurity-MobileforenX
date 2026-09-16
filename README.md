@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./mobileforenx-logo.svg" alt="MobileForenX — Mobile Forensics Toolkit" width="800">
+<img src="./Mobileforenx.svg" alt="MobileForenX — Mobile Forensics Toolkit" width="800">
 
 <br>
 
