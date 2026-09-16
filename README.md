@@ -113,7 +113,6 @@ MobileForenX/
 ├── mft
 ├── Mobileforenx.py
 ├── entrypoint.sh
-├── defenv
 ├── version.json
 │
 ├── content_extract.py
@@ -124,14 +123,9 @@ MobileForenX/
 ├── sqlite_carve.py
 ├── wireless_adb.py
 ├── security_manager.py
-│
-├── encrypt.sh
-├── encrypt_remaining.py
-│
-├── forensic_cases/
 ├── static/
 ├── templates/
-└── wordlists/
+
 ```
 
 ---
@@ -141,7 +135,7 @@ MobileForenX/
 ### Clone
 
 ```bash
-git clone <YOUR-REPOSITORY-URL>
+git clone https://github.com/Sayed-Eslamuddin908/Cybersecurity-MobileforenX.git
 cd Cybersecurity-MobileforenX
 ```
 
