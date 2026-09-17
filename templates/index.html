@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="csrf-token" content="{{ csrf_token }}">
+<title>MobileForenX</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body>
+
+<div class="app">
+
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">🛡️</div>
+      <div class="brand-text">
+        <div class="brand-name">MobileForenX</div>
+        <div class="brand-sub">Toolkit</div>
+      </div>
+    </div>
+
+    <nav class="nav">
+      <button class="nav-item active" data-tab="dashboard">
+        <span class="nav-icon">📊</span><span>Dashboard</span>
+      </button>
+      <button class="nav-item" data-tab="devices">
+        <span class="nav-icon">📱</span><span>Devices</span>
+      </button>
+      <button class="nav-item" data-tab="wireless">
+        <span class="nav-icon">📶</span><span>Wireless ADB</span>
+      </button>
+      <button class="nav-item" data-tab="acquisition">
+        <span class="nav-icon">⬇️</span><span>Acquisition</span>
+      </button>
+      <button class="nav-item" data-tab="content">
+        <span class="nav-icon">📞</span><span>Content Providers</span>
+      </button>
+      <button class="nav-item" data-tab="root">
+        <span class="nav-icon">🔓</span><span>Root Extract</span>
+      </button>
+      <button class="nav-item" data-tab="analysis">
+        <span class="nav-icon">🔍</span><span>Analysis</span>
+      </button>
+      <button class="nav-item" data-tab="recovery">
+        <span class="nav-icon">♻️</span><span>Data Recovery</span>
+      </button>
+      <button class="nav-item" data-tab="crack">
+        <span class="nav-icon">🔑</span><span>Password Cracker</span>
+      </button>
+      <button class="nav-item" data-tab="report">
+        <span class="nav-icon">📄</span><span>Reports</span>
+      </button>
+      <button class="nav-item" data-tab="cases">
+        <span class="nav-icon">📁</span><span>Cases</span>
+      </button>
+      <button class="nav-item" data-tab="coc">
+        <span class="nav-icon">🔗</span><span>Chain of Custody</span>
+      </button>
+      <button class="nav-item" data-tab="about">
+        <span class="nav-icon">ℹ️</span><span>About</span>
+      </button>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="credit-mini">
+        <div class="credit-label">Engineered &amp; Designed by</div>
+        <div class="credit-name">Sayed Eslamuddin</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="page-title">Dashboard</div>
+      <div class="topbar-right">
+        <div class="user-chip">
+          <span class="user-avatar">👤</span>
+          <span class="user-name">{{ username }}</span>
+        </div>
+        <div class="pill" id="status-pill">
+          <span class="pill-dot"></span>
+          <span id="status-text">Ready</span>
+        </div>
+        <a href="/logout" class="logout-btn" title="Sign out">⏻</a>
+      </div>
+    </header>
+
+    <div class="content">
+
+      <!-- DASHBOARD -->
+      <section id="pane-dashboard" class="pane active">
+        <div class="hero">
+          <div class="hero-text">
+            <h1>Welcome to MobileForenX</h1>
+            <p>A next-generation mobile forensics platform for Android &amp; iOS — acquisition, artifact parsing, wireless ADB, and chain of custody in one interface.</p>
+            <div class="hero-author">
+              Engineered &amp; Designed by <strong>Sayed Eslamuddin</strong>
+            </div>
+          </div>
+          <div class="hero-badge">
+            <div class="badge-circle">v{{ version }}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-4">
+          <div class="stat-card">
+            <div class="stat-icon blue">📁</div>
+            <div class="stat-body">
+              <div class="stat-label">Case</div>
+              <div class="stat-value" id="s-case">—</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon purple">👤</div>
+            <div class="stat-body">
+              <div class="stat-label">Examiner</div>
+              <div class="stat-value" id="s-examiner">—</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green">🔍</div>
+            <div class="stat-body">
+              <div class="stat-label">Artifacts</div>
+              <div class="stat-value" id="s-artifacts">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon yellow">♻️</div>
+            <div class="stat-body">
+              <div class="stat-label">Recovered</div>
+              <div class="stat-value" id="s-recovered">0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-3">
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">⚙️</div>
+              <h3>Tool Status</h3>
+            </div>
+            <div class="kv"><span>ADB</span><span id="s-adb">—</span></div>
+            <div class="kv"><span>iOS tools</span><span id="s-ios">—</span></div>
+            <div class="kv"><span>Output directory</span><span id="s-out" class="mono">—</span></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">📱</div>
+              <h3>Quick Device Scan</h3>
+            </div>
+            <p class="muted">Detect connected Android and iOS devices via USB.</p>
+            <button class="btn btn-primary" onclick="scanDevices()">
+              <span class="btn-icon">🔎</span> Scan Devices
+            </button>
+            <div id="device-result" class="mt-14"></div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <div class="card-icon">🚀</div>
+              <h3>Quick Start</h3>
+            </div>
+            <p class="muted">Jump right in:</p>
+            <div class="quick-actions">
+              <button class="btn btn-ghost" onclick="showTab('cases')">📁 New Case</button>
+              <button class="btn btn-ghost" onclick="showTab('wireless')">📶 Wireless</button>
+              <button class="btn btn-ghost" onclick="showTab('analysis')">🔍 Analyze</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DEVICES -->
+      <section id="pane-devices" class="pane">
+        <div class="page-head">
+          <h2>Connected Devices</h2>
+          <p>Android devices via ADB, iOS devices via libimobiledevice.</p>
+        </div>
+        <div class="card">
+          <button class="btn btn-primary" onclick="scanDevices()">🔄 Scan Now</button>
+          <div id="devices-list" class="mt-16"></div>
+        </div>
+      </section>
+
+      <!-- WIRELESS ADB -->
+      <section id="pane-wireless" class="pane">
+        <div class="page-head">
+          <h2>Wireless ADB</h2>
+          <p>Connect your Android device over Wi-Fi using a pairing code.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:20px" id="wireless-net-card">
+          <div class="card-head">
+            <div class="card-icon">🌐</div>
+            <h3>Network Status</h3>
+          </div>
+          <div id="wireless-net-status">
+            <p class="muted">Detecting Kali's network...</p>
+          </div>
+          <div style="margin-top:16px;padding:14px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:10px">
+            <strong style="color:var(--yellow)">⚠ Both devices must be on the same Wi-Fi / LAN</strong>
+            <p class="muted" style="margin-top:8px;line-height:1.7">
+              Wireless ADB is a <b>local network protocol</b>. It cannot work if:
+            </p>
+            <ul style="margin-left:20px;margin-top:6px;color:var(--text-dim);line-height:1.8;font-size:15px">
+              <li>Your phone is on mobile data (4G/5G)</li>
+              <li>Kali and phone are on different Wi-Fi networks</li>
+              <li>The Wi-Fi has AP isolation enabled</li>
+              <li>Either device is connected to a VPN</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">📡</div>
+            <h3>Pairing Method</h3>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="wirelessShowCode()">
+              <span class="btn-icon">🔢</span> Use Pairing Code (Recommended)
+            </button>
+            <button class="btn btn-ghost" onclick="wirelessShowQR()">
+              <span class="btn-icon">📷</span> Show QR (Experimental)
+            </button>
+            <button class="btn btn-ghost" onclick="wirelessStatus()">
+              <span class="btn-icon">🔄</span> Show Connected Devices
+            </button>
+          </div>
+        </div>
+
+        <div class="card" id="wireless-qr-panel" style="display:none;margin-bottom:20px;border-color:rgba(245,158,11,0.4)">
+          <div class="card-head">
+            <div class="card-icon">📷</div>
+            <h3>QR Code (Experimental)</h3>
+          </div>
+          <div style="padding:14px;background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);border-radius:10px;margin-bottom:16px">
+            <strong style="color:var(--red)">⚠ QR pairing requires mDNS broadcast — not supported in this build</strong>
+            <p class="muted" style="margin-top:8px;line-height:1.7">
+              Use the pairing code method instead — it works reliably.
+            </p>
+          </div>
+          <div class="form-row" style="margin-top:14px">
+            <div class="form-group">
+              <label>Kali Host IP</label>
+              <input type="text" id="wireless-host" placeholder="auto">
+            </div>
+            <div class="form-group">
+              <label>Pairing Port</label>
+              <input type="number" id="wireless-port" value="37000">
+            </div>
+            <div class="form-group">
+              <label>Pairing Password</label>
+              <input type="text" id="wireless-password" value="mfx-pair">
+            </div>
+          </div>
+          <button class="btn btn-ghost" onclick="wirelessGenerateQR()">
+            📷 Show QR (Experimental)
+          </button>
+          <div id="wireless-qr-result" style="margin-top:20px;text-align:center"></div>
+        </div>
+
+        <div class="card" id="wireless-code-panel" style="display:none;margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">🔢</div>
+            <h3>Pairing Code (Working Method)</h3>
+          </div>
+          <p class="muted">
+            On your phone:<br>
+            <b>Settings → Developer options → Wireless debugging → Pair device with pairing code</b>
+          </p>
+          <p class="muted" style="margin-top:8px">
+            The phone will show an <b>IP address, port, and 6-digit code</b>. Enter them below.
+          </p>
+          <div class="form-row" style="margin-top:14px">
+            <div class="form-group">
+              <label>Phone IP Address</label>
+              <input type="text" id="pair-host" placeholder="192.168.1.42">
+            </div>
+            <div class="form-group">
+              <label>Pairing Port</label>
+              <input type="number" id="pair-port" placeholder="37123">
+            </div>
+            <div class="form-group">
+              <label>6-Digit Pairing Code</label>
+              <input type="text" id="pair-code" placeholder="123456" maxlength="6">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="wirelessPair()">
+              <span class="btn-icon">🔗</span> Pair Device
+            </button>
+            <button class="btn btn-ghost" onclick="wirelessCheckNetwork()">
+              <span class="btn-icon">🌐</span> Check Network
+            </button>
+            <button class="btn btn-ghost" onclick="wirelessScanPorts()">
+              <span class="btn-icon">🔍</span> Scan Phone Ports
+            </button>
+          </div>
+          <div id="pair-output" class="output" style="display:none;margin-top:14px"></div>
+          <div id="net-check-output" class="output" style="display:none;margin-top:14px"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">🔗</div>
+            <h3>Step 2 — Connect to Paired Device</h3>
+          </div>
+          <div class="form-row" style="margin-top:14px">
+            <div class="form-group">
+              <label>Device IP</label>
+              <input type="text" id="conn-host" placeholder="192.168.1.42">
+            </div>
+            <div class="form-group">
+              <label>Connect Port</label>
+              <input type="number" id="conn-port" placeholder="5555">
+            </div>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="wirelessConnect()">
+              <span class="btn-icon">▶</span> Connect
+            </button>
+            <button class="btn btn-ghost" onclick="wirelessDisconnect()">
+              <span class="btn-icon">✕</span> Disconnect
+            </button>
+          </div>
+          <div id="wireless-output" class="output" style="display:none;margin-top:14px"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-icon">📱</div>
+            <h3>Connected Wireless Devices</h3>
+          </div>
+          <button class="btn btn-ghost" onclick="wirelessStatus()">🔄 Refresh</button>
+          <div id="wireless-devices" class="mt-14"></div>
+        </div>
+      </section>
+
+      <!-- ACQUISITION -->
+      <section id="pane-acquisition" class="pane">
+        <div class="page-head">
+          <h2>Acquire Data</h2>
+          <p>Extract data from the connected device into the current case.</p>
+        </div>
+        <div class="card">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Device Serial / UDID</label>
+              <input type="text" id="acq-serial" placeholder="Leave blank to auto-pick first device">
+            </div>
+            <div class="form-group">
+              <label>Acquisition Method</label>
+              <select id="acq-method">
+                <option value="backup">Android Logical Backup (adb backup)</option>
+                <option value="sdcard">Pull /sdcard</option>
+                <option value="root">Pull /data/data (requires root)</option>
+                <option value="ios">iOS Logical Backup</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="runAcquisition()">
+            <span class="btn-icon">▶</span> Start Acquisition
+          </button>
+          <div id="acq-output" class="output" style="display:none"></div>
+        </div>
+      </section>
+
+      <!-- CONTENT PROVIDERS -->
+      <section id="pane-content" class="pane">
+        <div class="page-head">
+          <h2>Content Provider Extraction</h2>
+          <p>Extract SMS, MMS, call logs, contacts, calendar, media, browser — no root required.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">📞</div>
+            <h3>Extract from Device</h3>
+          </div>
+          <p class="muted">Uses Android's official ContentProvider API. Works on non-rooted Android 6+.</p>
+          <button class="btn btn-primary" onclick="runContentExtract()">
+            <span class="btn-icon">📞</span> Extract All Providers
+          </button>
+          <div id="content-output" class="output" style="display:none"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">📥</div>
+            <h3>Download Extracted Data</h3>
+          </div>
+          <p class="muted">Choose the format you want — JSON, PDF, or both in a single zip.</p>
+          <div class="btn-row">
+            <a class="btn btn-primary" href="/api/extract/content/download/both" download>
+              <span class="btn-icon">📦</span> Download Both (JSON + PDF)
+            </a>
+            <a class="btn btn-ghost" href="/api/extract/content/download" download>
+              <span class="btn-icon">💾</span> JSON Only
+            </a>
+            <a class="btn btn-ghost" href="/api/extract/content/download/pdf" download>
+              <span class="btn-icon">📕</span> PDF Only
+            </a>
+            <button class="btn btn-ghost" onclick="viewContentExtract()">
+              <span class="btn-icon">👁</span> View In Browser
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-icon">👁</div>
+            <h3>In-Browser Preview</h3>
+          </div>
+          <div id="content-viewer">
+            <p class="muted">Click "View In Browser" above to see extracted data.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ROOT EXTRACT -->
+      <section id="pane-root" class="pane">
+        <div class="page-head">
+          <h2>Root Extraction</h2>
+          <p>Full /data/data extraction — for rooted devices you own.</p>
+        </div>
+        <div class="card">
+          <div class="card-head">
+            <div class="card-icon">🔓</div>
+            <h3>Extract App Databases</h3>
+          </div>
+          <div class="badge warn" style="margin-bottom:14px">⚠ Only for devices YOU OWN</div>
+          <p class="muted">Pulls databases from WhatsApp, Signal, Telegram, Instagram, and more.</p>
+          <button class="btn btn-primary" onclick="runRootExtract()">
+            <span class="btn-icon">🔓</span> Root Extract
+          </button>
+          <div id="root-output" class="output" style="display:none"></div>
+        </div>
+      </section>
+
+      <!-- ANALYSIS -->
+      <section id="pane-analysis" class="pane">
+        <div class="page-head">
+          <h2>Analyze Artifacts</h2>
+          <p>Choose which extracted folders to index. Only the folders you tick will appear in the report.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">📂</div>
+            <h3>Step 1 — Scan Folders</h3>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="scanFolders()">
+              <span class="btn-icon">🔍</span> Scan Folders
+            </button>
+            <button class="btn btn-ghost" onclick="selectAllFolders()">Select All</button>
+            <button class="btn btn-ghost" onclick="clearAllFolders()">Clear</button>
+          </div>
+          <div id="folders-viewer" class="mt-16"></div>
+          <div class="muted mt-16" id="selected-summary">No folders selected yet.</div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">📥</div>
+            <h3>Step 2 — Index Selected</h3>
+          </div>
+          <p class="muted">Parse the selected folders into the case artifact store.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="runIndexSelected()">
+              <span class="btn-icon">📥</span> Index Selected Folders
+            </button>
+            <button class="btn btn-ghost" onclick="clearAllArtifacts()">
+              <span class="btn-icon">🗑</span> Clear All Artifacts
+            </button>
+          </div>
+          <div id="index-output" class="output" style="display:none;margin-top:14px"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-icon">🔬</div>
+            <h3>Step 3 — Run Analysis</h3>
+          </div>
+          <p class="muted">Parse indexed artifacts into structured entities (messages, contacts, media, etc.).</p>
+          <button class="btn btn-primary" onclick="runAnalysis()">
+            <span class="btn-icon">🔬</span> Run Analysis
+          </button>
+          <div id="analysis-output" class="output" style="display:none;margin-top:14px"></div>
+        </div>
+      </section>
+
+      <!-- DATA RECOVERY -->
+      <section id="pane-recovery" class="pane">
+        <div class="page-head">
+          <h2>Data Recovery</h2>
+          <p>Carve deleted SQLite databases and media from raw disk images.</p>
+        </div>
+        <div class="card under-dev-card">
+          <div class="under-dev-banner">
+            <div class="under-dev-icon">♻️</div>
+            <div class="under-dev-content">
+              <div class="under-dev-badge">🚧 UNDER DEVELOPMENT</div>
+              <h2 class="under-dev-title">Data Recovery Engine</h2>
+              <p class="under-dev-subtitle">
+                SQLite carving, deleted file recovery, media thumbnail reconstruction,
+                and free-space parsing — all in one engine.
+              </p>
+            </div>
+          </div>
+
+          <div class="under-dev-grid">
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">🗄️</div>
+              <div>
+                <strong>SQLite Carving</strong>
+                <p class="muted">Recover deleted rows from WAL, journal, and free pages.</p>
+              </div>
+            </div>
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">🖼️</div>
+              <div>
+                <strong>Media Recovery</strong>
+                <p class="muted">Scan unallocated space for JPEG, PNG, MP4 signatures.</p>
+              </div>
+            </div>
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">📝</div>
+              <div>
+                <strong>Deleted Messages</strong>
+                <p class="muted">Reconstruct WhatsApp, SMS, and Telegram deletions.</p>
+              </div>
+            </div>
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">📊</div>
+              <div>
+                <strong>Timeline Reconstruction</strong>
+                <p class="muted">Merge recovered artifacts into a forensic timeline.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="under-dev-footer">
+            <div class="under-dev-progress">
+              <div class="under-dev-progress-label">Progress</div>
+              <div class="under-dev-progress-bar">
+                <div class="under-dev-progress-fill" style="width:35%"></div>
+              </div>
+              <div class="under-dev-progress-pct">35%</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PASSWORD CRACKER -->
+      <section id="pane-crack" class="pane">
+        <div class="page-head">
+          <h2>Password Cracker</h2>
+          <p>PIN / pattern recovery for locked devices you own — dictionary and brute-force.</p>
+        </div>
+        <div class="card under-dev-card">
+          <div class="under-dev-banner">
+            <div class="under-dev-icon">🔑</div>
+            <div class="under-dev-content">
+              <div class="under-dev-badge">🚧 UNDER DEVELOPMENT</div>
+              <h2 class="under-dev-title">Credential Recovery Suite</h2>
+              <p class="under-dev-subtitle">
+                GPU-accelerated PIN cracking, pattern enumeration, and gesture reconstruction
+                for Samsung, Xiaomi, and stock Android backups.
+              </p>
+            </div>
+          </div>
+
+          <div class="under-dev-grid">
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">🔢</div>
+              <div>
+                <strong>4–8 Digit PIN</strong>
+                <p class="muted">Exhaustive numeric brute-force with progress checkpoints.</p>
+              </div>
+            </div>
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">🔠</div>
+              <div>
+                <strong>Alphanumeric</strong>
+                <p class="muted">Dictionary + rule-based mask attacks.</p>
+              </div>
+            </div>
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">〰️</div>
+              <div>
+                <strong>Pattern Lock</strong>
+                <p class="muted">Reconstruct 3x3 gesture from hash.</p>
+              </div>
+            </div>
+            <div class="under-dev-feature">
+              <div class="under-dev-feature-icon">📱</div>
+              <div>
+                <strong>Vendor Support</strong>
+                <p class="muted">Samsung, Xiaomi, Huawei hash formats.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="under-dev-footer">
+            <div class="under-dev-progress">
+              <div class="under-dev-progress-label">Progress</div>
+              <div class="under-dev-progress-bar">
+                <div class="under-dev-progress-fill" style="width:20%"></div>
+              </div>
+              <div class="under-dev-progress-pct">20%</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- REPORT -->
+      <section id="pane-report" class="pane">
+        <div class="page-head">
+          <h2>Generate Report</h2>
+          <p>Select the data types and folders you want to include in the final report.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">📊</div>
+            <h3>Data Types</h3>
+          </div>
+          <div class="btn-row" style="margin-bottom:12px">
+            <button class="btn btn-ghost" onclick="reportSelectAllTypes()">✓ All</button>
+            <button class="btn btn-ghost" onclick="reportClearAllTypes()">✕ None</button>
+          </div>
+          <div id="report-type-picker"></div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">📂</div>
+            <h3>Include Folders</h3>
+          </div>
+          <div class="btn-row" style="margin-bottom:12px">
+            <button class="btn btn-primary" onclick="reportScanFolders()">🔍 Scan Folders</button>
+            <button class="btn btn-ghost" onclick="reportSelectAllFolders()">✓ All</button>
+            <button class="btn btn-ghost" onclick="reportClearAllFolders()">✕ None</button>
+          </div>
+          <div id="report-folder-picker"></div>
+        </div>
+
+        <div class="card">
+          <div class="muted mb-16" id="report-summary">Loading...</div>
+          <div class="btn-row">
+            <button class="btn btn-primary" onclick="generateReport()">
+              <span class="btn-icon">📄</span> Generate Reports
+            </button>
+          </div>
+          <div id="report-output" class="output" style="display:none;margin-top:14px"></div>
+          <div class="btn-row mt-16">
+            <a class="btn btn-ghost" id="dl-pdf" href="/api/report/download/pdf" download>⬇ PDF</a>
+            <a class="btn btn-ghost" id="dl-txt" href="/api/report/download/txt" download>⬇ TXT</a>
+            <a class="btn btn-ghost" id="dl-json" href="/api/report/download/json" download>⬇ JSON</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- CASES -->
+      <section id="pane-cases" class="pane">
+        <div class="page-head">
+          <h2>Case Management</h2>
+          <p>Create, load, and switch between forensic cases.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-head">
+            <div class="card-icon">➕</div>
+            <h3>Create New Case</h3>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Case Number</label>
+              <input type="text" id="new-case-id" placeholder="CASE-2026-001">
+            </div>
+            <div class="form-group">
+              <label>Examiner Name</label>
+              <input type="text" id="new-case-examiner" placeholder="Sayed Eslamuddin">
+            </div>
+            <div class="form-group">
+              <label>Date (DD/MM/YYYY)</label>
+              <input type="text" id="new-case-date" placeholder="16/09/2026">
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="createCase()">
+            <span class="btn-icon">📁</span> Create Case
+          </button>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <div class="card-icon">📚</div>
+            <h3>Existing Cases</h3>
+          </div>
+          <div class="btn-row" style="margin-bottom:12px">
+            <button class="btn btn-ghost" onclick="loadCases()">🔄 Refresh List</button>
+          </div>
+          <div id="cases-list"></div>
+        </div>
+      </section>
+
+      <!-- CHAIN OF CUSTODY -->
+      <section id="pane-coc" class="pane">
+        <div class="page-head">
+          <h2>Chain of Custody</h2>
+          <p>Immutable audit log of every forensic action performed in this case.</p>
+        </div>
+        <div class="card">
+          <div class="btn-row" style="margin-bottom:16px">
+            <button class="btn btn-primary" onclick="loadCoC()">
+              <span class="btn-icon">📖</span> Load Log
+            </button>
+            <button class="btn btn-ghost" onclick="verifyCoC()">
+              <span class="btn-icon">✅</span> Verify Integrity
+            </button>
+          </div>
+          <div id="coc-output" class="output" style="display:block">
+            <p class="muted">Click "Load Log" to view the chain of custody for the current case.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ABOUT -->
+      <section id="pane-about" class="pane">
+        <div class="page-head">
+          <h2>About MobileForenX</h2>
+          <p>Mobile forensics platform — engineered for examiners, built for reliability.</p>
+        </div>
+        <div class="card">
+          <div class="about-hero">
+            <div class="about-icon">🛡️</div>
+            <div>
+              <h2>MobileForenX</h2>
+              <p class="muted">Version {{ version }} · Forensic Investigation Suite</p>
+            </div>
+          </div>
+
+          <div class="about-grid">
+            <div class="about-item">
+              <div class="about-icon-sm">📱</div>
+              <div>
+                <strong>Android &amp; iOS Support</strong>
+                <p class="muted">ADB and libimobiledevice integration for cross-platform acquisition.</p>
+              </div>
+            </div>
+            <div class="about-item">
+              <div class="about-icon-sm">📶</div>
+              <div>
+                <strong>Wireless ADB</strong>
+                <p class="muted">Pair and connect over Wi-Fi with code-based authentication.</p>
+              </div>
+            </div>
+            <div class="about-item">
+              <div class="about-icon-sm">🔗</div>
+              <div>
+                <strong>Chain of Custody</strong>
+                <p class="muted">Tamper-evident audit log with integrity verification.</p>
+              </div>
+            </div>
+            <div class="about-item">
+              <div class="about-icon-sm">📄</div>
+              <div>
+                <strong>Multi-Format Reports</strong>
+                <p class="muted">PDF, TXT, and JSON exports for court-ready documentation.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="about-footer">
+            <div class="credit-big">
+              <div class="credit-label">Engineered &amp; Designed by</div>
+              <div class="credit-name-big">Sayed Eslamuddin</div>
+            </div>
+            <div class="about-warning">
+              <strong>⚠ Authorized Use Only</strong>
+              This tool is for forensic examiners working with legally obtained
+              devices. Ensure you have proper authority before any acquisition.
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <footer class="app-footer">
+      MobileForenX · Engineered by <strong>Sayed Eslamuddin</strong>
+      <span class="dot">•</span> v{{ version }}
+    </footer>
+  </main>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/app.js"></script>
+
+</body>
+</html>

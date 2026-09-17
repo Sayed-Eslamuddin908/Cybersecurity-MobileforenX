@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MobileForenX — Sign In</title>
+<link rel="stylesheet" href="/static/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+<body class="login-body">
+
+<div class="login-bg">
+  <div class="floating-orb orb-1"></div>
+  <div class="floating-orb orb-2"></div>
+  <div class="floating-orb orb-3"></div>
+  <div class="floating-orb orb-4"></div>
+</div>
+
+<div class="login-card">
+  <div class="login-logo">
+    <div class="login-logo-inner">
+      <span class="login-shield">🛡️</span>
+    </div>
+  </div>
+
+  <h1 class="login-title">MobileForenX</h1>
+  <p class="login-subtitle">Interactive Acquisition &amp; Analysis Framework</p>
+  <p class="login-author">Engineered &amp; Designed by Sayed Eslamuddin</p>
+  <p class="login-version">v1.0</p>
+
+  {% if error %}
+  <div class="login-error">{{ error }}</div>
+  {% endif %}
+
+  <form method="post" action="/login" class="login-form">
+    <div class="login-field">
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username"
+             placeholder="Enter username" required autofocus
+             autocomplete="username">
+    </div>
+
+    <div class="login-field">
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password"
+             placeholder="Enter password" required
+             autocomplete="current-password">
+    </div>
+
+    <button type="submit" class="login-btn">
+      <span class="login-btn-icon">🔓</span>
+      <span>Sign In</span>
+      <span class="login-btn-arrow">→</span>
+    </button>
+  </form>
+
+  <div class="login-footer">
+    <div class="login-credit">
+      <div class="credit-label">Engineered &amp; Designed by</div>
+      <div class="credit-name-big">Sayed Eslamuddin</div>
+    </div>
+    <div class="login-warning">
+      ⚠ Authorized use only — educational &amp; research purposes
+    </div>
+  </div>
+</div>
+
+<div class="login-copyright">
+  © 2026 Mobile Forensics Toolkit · Sayed Eslamuddin
+</div>
+
+</body>
+</html>
